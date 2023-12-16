@@ -8,3 +8,6 @@ dist/
 build/
 
 tests/data/
+.vs/slnx.sqlite
+.vs/VSWorkspaceState.json
+.vs/Trapy/v17/.wsuo
