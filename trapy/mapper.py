@@ -16,14 +16,15 @@ class Mapper:
 
     def get(self, seq):
 
-        if (self.last - seq >= 0 and self.last - seq <= self.fragment_size) or (
-            self.last - seq < 0
-            and ((self.mod - 1) - seq + self.last) <= self.fragment_size
-        ):
+        if ((self.last - seq >= 0 and self.last - seq <= self.fragment_size)
+            or (self.last - seq < 0
+                and ((self.mod - 1) - seq + self.last) <= self.fragment_size
+                )):
             for _ in range(3 * self.window_size):
                 self.last = (self.last + 1) % self.mod
                 self.map[self.last] = self.n
                 self.n += 1
-                _ = self.map.pop((self.last - 6 * self.window_size) % self.mod, None)
+                _ = self.map.pop((self.last - 6 * self.window_size) % self.mod,
+                                 None)
 
         return self.map[seq]

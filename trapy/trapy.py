@@ -1,10 +1,13 @@
-import socket, random, time
+import socket
+import random
+import time
 
 from utils import parse_address, build_tcp_header, _get_packet, get_packet
 from port_manager import bind, close_port, get_port
 
+
 class Conn:
-    def __init__(self, sock = None, size = 1024):
+    def __init__(self, sock=None, size=1024):
         if sock is None:
             self.socket = socket.socket(
                 socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP
@@ -52,11 +55,11 @@ def listen(address: str) -> Conn:
     return conn
 
 
-def accept(conn: Conn, size = 1024) -> Conn:
+def accept(conn: Conn, size=1024) -> Conn:
     print("ACCEPT")
 
     while True:
-        #ignore timeout and re-try
+        # ignore timeout and re-try
         conn.socket.settimeout(None)
         try:
             data, address = conn.socket.recvfrom(1024)
@@ -64,12 +67,13 @@ def accept(conn: Conn, size = 1024) -> Conn:
         except (TypeError, socket.timeout):
             continue
 
-        #check SYN flag
+        # check SYN flag
         if (tcp_header[5] >> 1 & 0x01) == 0:
-            print(f"Failed to accept the connection from: {(address[0], tcp_header[0])}, SYN flag has value 0")
+            print("Failed to accept the connection from:"
+                  + {(address[0], tcp_header[0])} + " SYN flag has value 0")
             continue
 
-        new_conn = Conn(size = size)
+        new_conn = Conn(size=size)
 
         new_conn.source_address = (conn.source_address[0], get_port())
 
@@ -140,7 +144,8 @@ def dial(address, size=1024) -> Conn:
 
     conn.dest_address = parse_address(address)
     source_port = get_port()
-    tcp_header = build_tcp_header(source_port, conn.dest_address[1], conn.seq, 7, syn=1)
+    tcp_header = build_tcp_header(source_port, conn.dest_address[1], conn.seq,
+                                  7, syn=1)
     packet = tcp_header
 
     print("Dial to: " + str(address))
@@ -187,11 +192,11 @@ def dial(address, size=1024) -> Conn:
     print("Succesfull handshake")
     print((conn.seq, conn.ack))
 
-    new_tcp_header = build_tcp_header(0, conn.dest_address[1], conn.seq, conn.ack + 1)
+    new_tcp_header = build_tcp_header(0, conn.dest_address[1], conn.seq,
+                                      conn.ack + 1)
     conn.socket.sendto(new_tcp_header, conn.dest_address)
 
     return conn
-
 
 
 def send(conn: Conn, data: bytes) -> int:

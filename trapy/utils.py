@@ -2,6 +2,7 @@ import socket
 
 from struct import pack, unpack
 
+
 def parse_address(address):
     host, port = address.split(':')
 
@@ -9,6 +10,7 @@ def parse_address(address):
         host = 'localhost'
 
     return host, int(port)
+
 
 def get_checksum(data):
     sum = 0
@@ -22,8 +24,9 @@ def get_checksum(data):
     result = result >> 8 | ((result & 0x00FF) << 8)
     return result
 
-def build_tcp_header(source_port, dest_port, seq, ack, data=b"", syn=0, fin=0, rst=0, _ack=0):
 
+def build_tcp_header(source_port, dest_port, seq, ack, data=b"", syn=0, fin=0,
+                     rst=0, _ack=0):
     tcp_source = source_port
     tcp_dest = dest_port
     tcp_seq = seq
@@ -88,6 +91,7 @@ def build_tcp_header(source_port, dest_port, seq, ack, data=b"", syn=0, fin=0, r
     )
     return tcp_header
 
+
 def _get_packet(data, conn):
     ip_header = data[0:20]
     ip_header = unpack("!BBHHHBBH4s4s", ip_header)
@@ -101,7 +105,8 @@ def _get_packet(data, conn):
         return ip_header, tcp_header, data
     else:
         return None
-    
+
+
 def get_packet(data, conn):
     ip_header = data[0:20]
     ip_header = unpack("!BBHHHBBH4s4s", ip_header)
@@ -120,7 +125,7 @@ def get_packet(data, conn):
         return ip_header, tcp_header, data
     else:
         return None
-    
+
 
 def verify_checksum(ip_header, tcp_header, data=b""):
     placeholder = 0

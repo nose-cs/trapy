@@ -1,7 +1,9 @@
 import json
 
+
 class ConnException(Exception):
     pass
+
 
 def bind(port):
     with open("./files/ports.json") as fp:
@@ -10,6 +12,7 @@ def bind(port):
         raise ConnException("port " + str(port) + " is occupied")
     with open("./files/ports.json", "w") as fp:
         json.dump(occupied_ports + [port], fp=fp, ensure_ascii=False, indent=2)
+
 
 def close_port(port):
     with open("./files/ports.json") as fp:
@@ -26,6 +29,7 @@ def close_port(port):
             indent=2,
         )
 
+
 def get_port():
     with open("./files/ports.json") as fp:
         occupied_ports = json.load(fp)
@@ -35,7 +39,8 @@ def get_port():
             continue
 
         with open("./files/ports.json", "w") as fp:
-            json.dump(occupied_ports + [port], fp=fp, ensure_ascii=False, indent=2)
+            json.dump(occupied_ports + [port], fp=fp, ensure_ascii=False,
+                      indent=2)
         return port
 
     raise ConnException("there are no available ports")
