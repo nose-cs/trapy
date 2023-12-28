@@ -25,3 +25,17 @@ def close_port(port):
             ensure_ascii=False,
             indent=2,
         )
+
+def get_port():
+    with open("./files/ports.json") as fp:
+        occupied_ports = json.load(fp)
+
+    for port in range(int(2 ** 16)):
+        if port in occupied_ports:
+            continue
+
+        with open("./files/ports.json", "w") as fp:
+            json.dump(occupied_ports + [port], fp=fp, ensure_ascii=False, indent=2)
+        return port
+
+    raise ConnException("there are no available ports")
