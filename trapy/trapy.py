@@ -56,7 +56,7 @@ def accept(conn: Conn, size = 1024) -> Conn:
     print("ACCEPT")
 
     while True:
-        #ignore timeout
+        #ignore timeout and re-try
         conn.socket.settimeout(None)
         try:
             data, address = conn.socket.recvfrom(1024)
@@ -71,11 +71,11 @@ def accept(conn: Conn, size = 1024) -> Conn:
 
         new_conn = Conn(size = size)
 
-        new_conn.source_address = (conn.source_address[0],get_port())
+        new_conn.source_address = (conn.source_address[0], get_port())
 
         new_conn.dest_address = (address[0], tcp_header[0])
 
-        print(f"Accepted connection from:  {str((address[0], tcp_header[0]))}")
+        print(f"Accepted connection from: {str((address[0], tcp_header[0]))}")
 
         resp_tcp_header = build_tcp_header(
             new_conn.source_address[1],
@@ -124,7 +124,7 @@ def accept(conn: Conn, size = 1024) -> Conn:
         new_conn.socket.settimeout(None)
 
         if reset:
-            print("Accepted reset")
+            print("Reset accept")
             close(new_conn)
             continue
 
@@ -134,8 +134,64 @@ def accept(conn: Conn, size = 1024) -> Conn:
         return new_conn
 
 
-def dial(address) -> Conn:
-    pass
+def dial(address, size=1024) -> Conn:
+    print("DIAL")
+    conn = Conn(size=size)
+
+    conn.dest_address = parse_address(address)
+    source_port = get_port()
+    tcp_header = build_tcp_header(source_port, conn.dest_address[1], conn.seq, 7, syn=1)
+    packet = tcp_header
+
+    print("Dial to: " + str(address))
+
+    conn.source_address = (conn.socket.getsockname()[0], source_port)
+    conn.socket.sendto(packet, conn.dest_address)
+
+    closed_dial = False
+    time_limit = conn.get_time_limit()
+    timer = time.time()
+    conn.socket.settimeout(1)
+    while True:
+        if time_limit is None:
+            closed_dial = True
+            break
+
+        if time.time() - timer > time_limit:
+            print("Resending SYN")
+            conn.socket.sendto(packet, conn.dest_address)
+            time_limit = conn.get_time_limit()
+            timer = time.time()
+            continue
+
+        try:
+            try:
+                data, address = conn.socket.recvfrom(1024)
+            except socket.timeout:
+                continue
+
+            ip_header, tcp_header, _ = _get_packet(data, conn)
+            conn.reset_time_limit()
+            break
+        except TypeError:
+            continue
+
+    conn.socket.settimeout(None)
+    if closed_dial:
+        raise ConnException("Dial Failed")
+
+    conn.ack = tcp_header[2]
+
+    conn.dest_address = (socket.inet_ntoa(ip_header[8]), tcp_header[0])
+
+    print("Succesfull handshake")
+    print((conn.seq, conn.ack))
+
+    new_tcp_header = build_tcp_header(0, conn.dest_address[1], conn.seq, conn.ack + 1)
+    conn.socket.sendto(new_tcp_header, conn.dest_address)
+
+    return conn
+
 
 
 def send(conn: Conn, data: bytes) -> int:
