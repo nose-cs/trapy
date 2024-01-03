@@ -1,6 +1,7 @@
 import socket
 
-from struct import pack
+from struct import pack, unpack
+
 
 def parse_address(address):
     host, port = address.split(':')
@@ -9,6 +10,7 @@ def parse_address(address):
         host = 'localhost'
 
     return host, int(port)
+
 
 def get_checksum(data):
     sum = 0
@@ -22,8 +24,9 @@ def get_checksum(data):
     result = result >> 8 | ((result & 0x00FF) << 8)
     return result
 
-def build_tcp_header(source_port, dest_port, seq, ack, data=b"", syn=0, fin=0, rst=0, _ack=0):
 
+def build_tcp_header(source_port, dest_port, seq, ack, data=b"", syn=0, fin=0,
+                     rst=0, _ack=0):
     tcp_source = source_port
     tcp_dest = dest_port
     tcp_seq = seq
@@ -87,3 +90,69 @@ def build_tcp_header(source_port, dest_port, seq, ack, data=b"", syn=0, fin=0, r
         tcp_urg_ptr,
     )
     return tcp_header
+
+
+def _get_packet(data, conn):
+    ip_header = data[0:20]
+    ip_header = unpack("!BBHHHBBH4s4s", ip_header)
+
+    tcp_header = data[20:40]
+    tcp_header = unpack("!HHLLBBHHH", tcp_header)
+
+    data = data[40:]
+
+    if tcp_header[1] == conn.source_address[1]:
+        return ip_header, tcp_header, data
+    else:
+        return None
+
+
+def get_packet(data, conn):
+    ip_header = data[0:20]
+    ip_header = unpack("!BBHHHBBH4s4s", ip_header)
+
+    tcp_header = data[20:40]
+    tcp_header = unpack("!HHLLBBHHH", tcp_header)
+
+    data = data[40:]
+
+    if (
+        tcp_header[1] == conn.source_address[1]
+        and tcp_header[0] == conn.dest_address[1]
+        and socket.inet_ntoa(ip_header[8]) == conn.dest_address[0]
+        and verify_checksum(ip_header, tcp_header, data)
+    ):
+        return ip_header, tcp_header, data
+    else:
+        return None
+
+
+def verify_checksum(ip_header, tcp_header, data=b""):
+    placeholder = 0
+    if len(data) > 0:
+        tcp_length = 20 + len(data)
+    else:
+        tcp_length = 20
+    protocol = ip_header[6]
+
+    received_tcp_segment = pack(
+        "!HHLLBBHHH",
+        tcp_header[0],
+        tcp_header[1],
+        tcp_header[2],
+        tcp_header[3],
+        tcp_header[4],
+        tcp_header[5],
+        tcp_header[6],
+        0,
+        tcp_header[8],
+    )
+    pseudo_hdr = pack("!BBH", placeholder, protocol, tcp_length)
+    total_msg = pseudo_hdr + received_tcp_segment
+    if data is not None:
+        total_msg += data
+
+    checksum_from_packet = tcp_header[7]
+    tcp_checksum = get_checksum(total_msg)
+
+    return checksum_from_packet == tcp_checksum
