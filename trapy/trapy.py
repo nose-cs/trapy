@@ -1,6 +1,7 @@
 from mapper import Mapper
+from port_manager import PortManager
 from threading import Thread
-from port_manager import get_port, bind, close_port
+# from port_manager import get_port, bind, close_port
 from threads import RecvTask
 from utils import (
     parse_address,
@@ -8,7 +9,10 @@ from utils import (
     get_packet,
     clean_in_buffer,
 )
-import random, socket, time
+import random
+import socket
+import time
+
 
 class Conn:
     def __init__(self, sock=None, size=1024):
@@ -54,12 +58,14 @@ def listen(address: str) -> Conn:
 
     print("socket binded to: " + address)
     conn.source_address = parse_address(address)
-    bind(conn.source_address[1])
+
+    port_manager = PortManager()
+    port_manager.bind(conn.source_address[1])
 
     return conn
 
 
-def accept(conn : Conn, size=1024) -> Conn:
+def accept(conn: Conn, size=1024) -> Conn:
     print("ACCEPT")
 
     while True:
@@ -79,9 +85,11 @@ def accept(conn : Conn, size=1024) -> Conn:
             continue
 
         new_conn = Conn(size=size)
+        port_manager = PortManager()
+
         new_conn.source_address = (
             conn.source_address[0],
-            get_port(),
+            port_manager.get_port()
         )
         new_conn.dest_address = (address[0], tcp_header[0])
 
@@ -145,10 +153,11 @@ def dial(address, size=1024) -> Conn:
     print("DIAL")
     conn = Conn(size=size)
 
-    conn.source_address = (conn.socket.getsockname()[0], get_port())
+    port_manager = PortManager()
+    conn.source_address = (conn.socket.getsockname()[0], port_manager.get_port())
     conn.dest_address = parse_address(address)
 
-    packet = build_packet(conn.source_address, conn.dest_address, conn.seq, 7,syn=1)
+    packet = build_packet(conn.source_address, conn.dest_address, conn.seq, 7, syn=1)
 
     print("dial to: " + str(address))
 
@@ -268,7 +277,7 @@ def send(conn: Conn, data: bytes) -> int:
                 timer = time.time()
 
             if mapper.get(conn.seq) + size >= len(data):
-                to_send = data[mapper.get(conn.seq) :]
+                to_send = data[mapper.get(conn.seq):]
                 packet = build_packet(
                     conn.source_address,
                     conn.dest_address,
@@ -278,7 +287,7 @@ def send(conn: Conn, data: bytes) -> int:
                     data=to_send,
                 )
             else:
-                to_send = data[mapper.get(conn.seq) : mapper.get(conn.seq) + size]
+                to_send = data[mapper.get(conn.seq): mapper.get(conn.seq) + size]
                 packet = build_packet(
                     conn.source_address,
                     conn.dest_address,
@@ -337,12 +346,12 @@ def recv(conn: Conn, length: int) -> bytes:
                 )
 
                 conn.socket.sendto(packet, conn.dest_address)
-                
+
                 if (tcp_header[5] & 0x01) == 1 or len(conn.recived_buffer) >= length:
-                    
+
                     for _ in range(3):
                         conn.socket.sendto(packet, conn.dest_address)
-                    
+
                     recv_task.is_runing = False
                     t.join()
 
@@ -375,25 +384,22 @@ def recv(conn: Conn, length: int) -> bytes:
         if timer is not None and time.time() - timer > time_limit:
             timer = time.time()
             time_limit = conn.get_time_limit()
-            
+
             print("re-sending ack " + str(conn.ack))
-            
-            packet = build_packet(
-                conn.source_address, conn.dest_address, 7, conn.ack, _ack=1
-            )
-            
+
+            packet = build_packet(conn.source_address, conn.dest_address, 7, conn.ack, _ack=1)
+
             conn.socket.sendto(packet, conn.dest_address)
 
 
 def close(conn: Conn):
     print("CLOSE")
-    
-    packet = build_packet(
-        conn.source_address, conn.dest_address, conn.seq, 3, fin=1
-    )
-    
+
+    packet = build_packet(conn.source_address, conn.dest_address, conn.seq, 3, fin=1)
+
     conn.socket.sendto(packet, conn.dest_address)
     conn.socket.close()
     conn.socket = None
-    
-    close_port(conn.source_address[1])
+
+    port_manager = PortManager()
+    port_manager.close_port(conn.source_address[1])

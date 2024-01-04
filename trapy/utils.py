@@ -28,7 +28,8 @@ def build_packet(
     ip_daddr = socket.inet_aton(dest[0])
 
     ip_ihl_ver = (ip_ver << 4) + ip_ihl
-    ip_header = pack('!BBHHHBBH4s4s', ip_ihl_ver, ip_dscp, ip_total_len, ip_id, ip_frag_off, ip_ttl, ip_proto, ip_check, ip_saddr, ip_daddr)
+    ip_header = pack('!BBHHHBBH4s4s', ip_ihl_ver, ip_dscp, ip_total_len, ip_id, ip_frag_off, ip_ttl,
+                     ip_proto, ip_check, ip_saddr, ip_daddr)
 
     # TCP HEADER
     tcp_seq = seq
@@ -47,7 +48,8 @@ def build_packet(
     tcp_offset_res = (tcp_doff << 4) + 0
     tcp_flags = tcp_fin + (tcp_syn << 1) + (tcp_rst << 2) + (tcp_psh << 3) + (tcp_ack << 4) + (tcp_urg << 5)
 
-    tcp_header = pack('!HHLLBBHHH', source[1], dest[1], tcp_seq, tcp_ack_seq, tcp_offset_res, tcp_flags, tcp_window, tcp_check, tcp_urg_ptr)
+    tcp_header = pack('!HHLLBBHHH', source[1], dest[1], tcp_seq, tcp_ack_seq, tcp_offset_res,
+                      tcp_flags, tcp_window, tcp_check, tcp_urg_ptr)
 
     # Pseudo header for checksum calculation
     placeholder = 0
@@ -61,7 +63,8 @@ def build_packet(
 
     tcp_check = get_checksum(total_header)
 
-    tcp_header = pack('!HHLLBBHHH', source[1], dest[1], tcp_seq, tcp_ack_seq, tcp_offset_res, tcp_flags, tcp_window, tcp_check, tcp_urg_ptr)
+    tcp_header = pack('!HHLLBBHHH', source[1], dest[1], tcp_seq, tcp_ack_seq, tcp_offset_res,
+                      tcp_flags, tcp_window, tcp_check, tcp_urg_ptr)
 
     packet = ip_header + tcp_header + data
 
@@ -84,7 +87,7 @@ def get_checksum(data):
 def get_packet(packet, conn):
     ip_header = packet[:20]
     iph = unpack('!BBHHHBBH4s4s', ip_header)
-    
+
     total_length = iph[2]
 
     tcp_header = packet[20:40]
@@ -94,8 +97,8 @@ def get_packet(packet, conn):
 
     data = packet[40:total_length]
 
-    #print(dest_ip)
-    #print(conn.source_address)
+    # print(dest_ip)
+    # print(conn.source_address)
 
     if (
         dest_port == conn.source_address[1]
@@ -105,15 +108,15 @@ def get_packet(packet, conn):
     else:
         return None
 
+
 def verify_checksum(ip_header, tcp_header, data=b""):
-    
     placeholder = 0
-    
+
     if len(data) > 0:
         tcp_length = 20 + len(data)
     else:
         tcp_length = 20
-    
+
     protocol = ip_header[6]
 
     received_tcp_segment = pack(
@@ -128,10 +131,10 @@ def verify_checksum(ip_header, tcp_header, data=b""):
         0,
         tcp_header[8],
     )
-    
+
     pseudo_hdr = pack("!BBH", placeholder, protocol, tcp_length)
     total_msg = pseudo_hdr + received_tcp_segment
-    
+
     if data is not None:
         total_msg += data
 
