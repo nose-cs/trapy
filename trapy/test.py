@@ -80,6 +80,7 @@ def make_client(address, file_path):
 
         logger.info(f"data saved. length: {len(data)}")
 
+    close(conn)
 
 def main():
     args = make_argumentparser().parse_args()
