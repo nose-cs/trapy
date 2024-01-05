@@ -7,7 +7,7 @@ from utils import (
     get_packet,
     clean_in_buffer,
 )
-import random, socket, time
+import socket, time
 
 class Conn:
     def __init__(self, sock=None, size=1024):
@@ -19,7 +19,6 @@ class Conn:
             self.socket = sock
 
         self.fragment_size = size
-        self.seq_limit = 2 ** 32
         self.seq = 0
 
         self.ack = None
@@ -199,6 +198,11 @@ def dial(address, size=1024) -> Conn:
 
 
 def send(conn: Conn, data: bytes) -> int:
+    if len(data) >= 2**32 :
+        left = send(conn, data[: data / 2])
+        right = send(conn, data[data / 2 :])
+        return left + right
+    
     print("SEND")
     
     size = conn.fragment_size
@@ -212,6 +216,10 @@ def send(conn: Conn, data: bytes) -> int:
     t.start()
 
     timer = None
+
+    if conn.get_time_limit() is not None:
+        conn.reset_time_limit()
+    
     time_limit = conn.get_time_limit()
 
     while True:
@@ -222,14 +230,13 @@ def send(conn: Conn, data: bytes) -> int:
             return window
 
         if len(recv_task.recived) > 0:
-            conn.reset_time_limit()
 
             _, tcp_header, _ = recv_task.recived.pop(0)
 
             if (tcp_header[5] >> 4 & 0x01) != 1:
                 continue
 
-            ack = tcp_header[3] % conn.seq_limit
+            ack = tcp_header[3]
             
             if ack + size >= len(data):
                 recv_task.stop()
@@ -238,7 +245,10 @@ def send(conn: Conn, data: bytes) -> int:
                 return len(data)
 
             if ack >= curr_ack:
-                curr_ack = (ack + size) % conn.seq_limit
+                conn.reset_time_limit()
+                time_limit = conn.get_time_limit()
+                timer = time.time()
+                curr_ack = ack + size
 
             else:
                 rst = tcp_header[5] >> 2 & 0x01
@@ -249,14 +259,14 @@ def send(conn: Conn, data: bytes) -> int:
                     window = ack
 
         if timer is not None and time.time() - timer > conn.time_limit:
-            conn.seq = window % conn.seq_limit
+            print("RESEND FROM " + str(curr_ack))
+            window = curr_ack
             time_limit = conn.get_time_limit()
             timer = time.time()
 
-        if curr_ack == window:
+        if curr_ack >= window:
 
-            if timer is None:
-                timer = time.time()
+            window = max(curr_ack, window)
 
             final_window = window + window_size
 
@@ -285,6 +295,8 @@ def send(conn: Conn, data: bytes) -> int:
                 window += size
 
                 conn.socket.sendto(packet, conn.dest_address)
+
+            timer = time.time()
 
 
 def recv(conn: Conn, length: int) -> bytes:
@@ -330,14 +342,15 @@ def recv(conn: Conn, length: int) -> bytes:
                 continue
 
             seq_recived = tcp_header[2]
-            if seq_recived == conn.ack:
+            if seq_recived <= conn.ack:
 
-                conn.recived_buffer += data
                 packet = build_packet(
                     conn.source_address, conn.dest_address, 7, conn.ack, _ack=1
                 )
 
-                conn.ack = (seq_recived + len(data)) % conn.seq_limit
+                if seq_recived == conn.ack:
+                    conn.recived_buffer += data
+                    conn.ack = seq_recived + len(data)
 
                 conn.socket.sendto(packet, conn.dest_address)
                 
@@ -382,11 +395,13 @@ def recv(conn: Conn, length: int) -> bytes:
 def close(conn: Conn):
     print("CLOSE")
     
-    packet = build_packet(
-        conn.source_address, conn.dest_address, conn.seq, 3, fin=1
-    )
+    if(conn.dest_address is not None):
+        packet = build_packet(
+            conn.source_address, conn.dest_address, conn.seq, 3, fin=1
+        )
+        
+        conn.socket.sendto(packet, conn.dest_address)
     
-    conn.socket.sendto(packet, conn.dest_address)
     conn.socket.close()
     conn.socket = None
     
