@@ -5,7 +5,7 @@ from utils import (
     parse_address,
     build_packet,
     get_packet,
-    clean_in_buffer,
+    clear_in_buffer,
 )
 import socket
 import time
@@ -58,8 +58,7 @@ class Conn:
         Doubles the current time limit and increments the time errors count.
 
         Returns:
-            None: if the errors count reaches 10.
-            The current time limit: otherwise.
+            The current time limit, or None if the errors count reaches 10.
         """
         result = self.time_limit
         self.time_limit = self.time_limit * 2
@@ -409,7 +408,7 @@ def recv(conn: Conn, length: int) -> bytes:
         if time_limit is None:
             recv_task.is_runing = False
             t.join()
-            clean_in_buffer(conn)
+            clear_in_buffer(conn)
             print("Expired connection")
             if len(conn.received_buffer) < length:
                 result = conn.received_buffer[:]

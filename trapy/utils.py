@@ -3,6 +3,15 @@ import socket
 
 
 def parse_address(address):
+    """
+    Parses a network address string into its host and port components.
+
+    Args:
+    address (str): A string representing the network address.
+
+    Returns:
+    A tuple containing the host and port.
+    """
     host, port = address.split(":")
 
     if host == "":
@@ -11,9 +20,24 @@ def parse_address(address):
     return host, int(port)
 
 
-def build_packet(
-    source, dest, seq, ack, data=b"", syn=0, fin=0, rst=0, _ack=0
-):
+def build_packet(source, dest, seq, ack, data=b"", syn=0, fin=0, rst=0, _ack=0):
+    """
+    Constructs a TCP/IP packet from the provided parameters.
+
+    Args:
+        source (tuple): A tuple containing the source IP address and port number.
+        dest (tuple): A tuple containing the destination IP address and port number.
+        seq (int): The sequence number of the packet.
+        ack (int): The acknowledgment number of the packet.
+        data (bytes): The data to be included in the packet. Defaults to an empty byte string.
+        syn (int): A flag indicating whether the packet includes a SYN flag. Defaults to 0.
+        fin (int): A flag indicating whether the packet includes a FIN flag. Defaults to 0.
+        rst (int): A flag indicating whether the packet includes a RST flag. Defaults to 0.
+        _ack (int): A flag indicating whether the packet includes an ACK flag. Defaults to 0.
+
+    Returns:
+        A byte string representing the constructed packet.
+    """
     # IP HEADER
     ip_ver = 4
     ip_ihl = 5
@@ -71,7 +95,16 @@ def build_packet(
     return packet
 
 
-def get_checksum(data):
+def get_checksum(data: bytes):
+    """
+    Calculates the checksum of a given data block.
+
+    Args:
+    data (bytes): The data block for which the checksum is to be calculated.
+
+    Returns:
+    An integer representing the calculated checksum.
+    """
     sum = 0
     for i in range(0, len(data), 2):
         if i < len(data) and (i + 1) < len(data):
@@ -85,6 +118,17 @@ def get_checksum(data):
 
 
 def get_packet(packet, conn):
+    """
+    Parses a TCP/IP packet into its constituent parts.
+
+    Args:
+    packet (bytes): A byte string representing the packet.
+    conn (Conn): A Conn object representing the network connection.
+
+    Returns:
+    A tuple containing the parsed IP header, TCP header, and data, or None if the packet is invalid.
+    """
+
     ip_header = packet[:20]
     iph = unpack('!BBHHHBBH4s4s', ip_header)
 
@@ -97,19 +141,25 @@ def get_packet(packet, conn):
 
     data = packet[40:total_length]
 
-    # print(dest_ip)
-    # print(conn.source_address)
-
-    if (
-        dest_port == conn.source_address[1]
-        and verify_checksum(iph, tcph, data)
-    ):
+    if (dest_port == conn.source_address[1] and verify_checksum(iph, tcph, data)):
         return iph, tcph, data
     else:
         return None
 
 
 def verify_checksum(ip_header, tcp_header, data=b""):
+    """
+    Verifies the checksum of a TCP/IP packet.
+
+    Args:
+    ip_header (tuple): A tuple representing the IP header.
+    tcp_header (tuple): A tuple representing the TCP header.
+    data (bytes): Optional byte string representing the data. Defaults to an empty byte string.
+
+    Returns:
+    A boolean indicating whether the checksum is valid.
+    """
+
     placeholder = 0
 
     if len(data) > 0:
@@ -144,7 +194,13 @@ def verify_checksum(ip_header, tcp_header, data=b""):
     return checksum_from_packet == tcp_checksum
 
 
-def clean_in_buffer(conn):
+def clear_in_buffer(conn):
+    """
+    Clears the input buffer of a network connection.
+
+    Args:
+    conn (Conn): A Conn object representing the network connection.
+    """
     while True:
         try:
             _, _ = conn.socket.recvfrom(65565)
