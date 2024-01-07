@@ -1,4 +1,4 @@
-from .trapy import listen, dial, accept, send, recv, close  # noqa: F403
+from .trapy import listen, dial, accept, send, recv, close
 
 __all__ = [
     'listen',
