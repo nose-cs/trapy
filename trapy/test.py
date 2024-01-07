@@ -53,6 +53,7 @@ def make_server(address, file_path, chunk_size):
 
     logger.info("releasing resources")
     executor.shutdown(True)
+    close(server)
 
 
 def make_client(address, file_path):

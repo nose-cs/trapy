@@ -1,6 +1,6 @@
+from threading import Thread
 from mapper import Mapper
 from port_manager import PortManager
-from threading import Thread
 from threads import RecvTask
 from utils import (
     parse_address,
@@ -23,8 +23,7 @@ class Conn:
             self.socket = sock
 
         self.fragment_size = size
-        self.seq_limit = 2 ** 32
-        self.seq = random.randint(0, self.seq_limit)
+        self.seq = 0
 
         self.ack = None
 
@@ -208,18 +207,28 @@ def dial(address, size=1024) -> Conn:
 
 
 def send(conn: Conn, data: bytes) -> int:
+    if len(data) >= 2**32 :
+        left = send(conn, data[: data / 2])
+        right = send(conn, data[data / 2 :])
+        return left + right
+    
     print("SEND")
+    
     size = conn.fragment_size
     window_size = size * 20
 
-    window = conn.seq
-    duplicated_ack = 0
-    mapper = Mapper(conn.seq, conn.seq_limit, len(data), window_size, size)
+    window = 0
+    curr_ack = 0
+
     recv_task = RecvTask()
     t = Thread(target=recv_task._recv, args=[conn])
     t.start()
 
     timer = None
+
+    if conn.get_time_limit() is not None:
+        conn.reset_time_limit()
+    
     time_limit = conn.get_time_limit()
 
     while True:
@@ -227,76 +236,77 @@ def send(conn: Conn, data: bytes) -> int:
             recv_task.stop()
             t.join()
             print("Expired Connection")
-            return mapper.get(window)
+            return window
 
         if len(recv_task.recived) > 0:
-            conn.reset_time_limit()
+            # conn.reset_time_limit()
 
             _, tcp_header, _ = recv_task.recived.pop(0)
 
             if (tcp_header[5] >> 4 & 0x01) != 1:
                 continue
 
-            ack = tcp_header[3] % conn.seq_limit
-
-            if mapper.get(ack) >= len(data):
+            ack = tcp_header[3]
+            
+            if ack + size >= len(data):
                 recv_task.stop()
                 t.join()
-                print("Sended " + str(len(data)) + " bytes of data")
+                print("Sent " + str(len(data)) + " bytes of data")
                 return len(data)
 
-            if mapper.get(ack) > mapper.get(window):
-                if conn.seq != window:
-                    timer = time.time()
-                else:
-                    timer = None
-
-                window = ack % conn.seq_limit
-                duplicated_ack = 0
+            if ack >= curr_ack:
+                conn.reset_time_limit()
+                time_limit = conn.get_time_limit()
+                timer = time.time()
+                curr_ack = ack + size
 
             else:
-                duplicated_ack += 1
-                if duplicated_ack == 3:
+                rst = tcp_header[5] >> 2 & 0x01
+
+                if rst == 1:
                     recv_task.recived.clear()
-                    conn.seq = ack % conn.seq_limit
-                    duplicated_ack = 0
+                    curr_ack = ack
+                    window = ack
 
         if timer is not None and time.time() - timer > conn.time_limit:
-            conn.seq = window % conn.seq_limit
+            print("RESEND FROM " + str(curr_ack))
+            window = curr_ack
             time_limit = conn.get_time_limit()
             timer = time.time()
 
-        if (
-            (mapper.get(conn.seq) < (mapper.get(window) + window_size))
-            and (mapper.get(conn.seq) < len(data))
-            or len(data) == 0
-        ):
+        if curr_ack >= window:
 
-            if timer is None:
-                timer = time.time()
+            window = max(curr_ack, window)
 
-            if mapper.get(conn.seq) + size >= len(data):
-                to_send = data[mapper.get(conn.seq):]
-                packet = build_packet(
-                    conn.source_address,
-                    conn.dest_address,
-                    conn.seq,
-                    3,
-                    fin=1,
-                    data=to_send,
-                )
-            else:
-                to_send = data[mapper.get(conn.seq): mapper.get(conn.seq) + size]
-                packet = build_packet(
-                    conn.source_address,
-                    conn.dest_address,
-                    conn.seq,
-                    4,
-                    data=to_send,
-                )
+            final_window = window + window_size
 
-            conn.socket.sendto(packet, conn.dest_address)
-            conn.seq = (conn.seq + len(to_send)) % conn.seq_limit
+            while window <= final_window and window < len(data):
+
+                if window + size >= len(data):
+                    to_send = data[window : ]
+                    packet = build_packet(
+                        conn.source_address,
+                        conn.dest_address,
+                        window,
+                        3,
+                        fin=1,
+                        data=to_send,
+                    )
+                else:
+                    to_send = data[window : window + size]
+                    packet = build_packet(
+                        conn.source_address,
+                        conn.dest_address,
+                        window,
+                        4,
+                        data=to_send,
+                    )
+
+                window += size
+
+                conn.socket.sendto(packet, conn.dest_address)
+
+            timer = time.time()
 
 
 def recv(conn: Conn, length: int) -> bytes:
@@ -304,9 +314,12 @@ def recv(conn: Conn, length: int) -> bytes:
     recv_task = RecvTask()
     t = Thread(target=recv_task._recv, args=[conn])
     t.start()
+    
     timer = time.time()
     time_limit = conn.get_time_limit()
-    retr = 0
+
+    conn.ack = 0
+
     while True:
         if time_limit is None:
             recv_task.is_runing = False
@@ -330,27 +343,29 @@ def recv(conn: Conn, length: int) -> bytes:
             conn.reset_time_limit()
             _, tcp_header, data = recv_task.recived.pop(0)
 
+            if len(data) == 0 and (tcp_header[5] & 0x01) == 1:
+                recv_task.is_runing = False
+                t.join()
+                return b""
+
             if (tcp_header[5] >> 4 & 0x01) == 1:
                 continue
 
             seq_recived = tcp_header[2]
-            if seq_recived == conn.ack:
+            if seq_recived <= conn.ack:
 
-                retr = 0
-                conn.ack = (seq_recived + len(data)) % conn.seq_limit
-
-                conn.recived_buffer += data
                 packet = build_packet(
                     conn.source_address, conn.dest_address, 7, conn.ack, _ack=1
                 )
 
+                if seq_recived == conn.ack:
+                    conn.recived_buffer += data
+                    conn.ack = seq_recived + len(data)
+
                 conn.socket.sendto(packet, conn.dest_address)
-
+                
                 if (tcp_header[5] & 0x01) == 1 or len(conn.recived_buffer) >= length:
-
-                    for _ in range(3):
-                        conn.socket.sendto(packet, conn.dest_address)
-
+                    
                     recv_task.is_runing = False
                     t.join()
 
@@ -365,38 +380,39 @@ def recv(conn: Conn, length: int) -> bytes:
                         print("recived " + str(len(result)) + " bytes of data")
                         return result
 
-            else:
-
-                retr += 1
-                if retr == 3:
-                    retr = 0
-                    recv_task.recived.clear()
-                    packet = build_packet(
-                        conn.source_address,
-                        conn.dest_address,
-                        7,
-                        conn.ack,
-                        _ack=1,
-                    )
-                    conn.socket.sendto(packet, conn.dest_address)
+            elif seq_recived > conn.ack:
+                print("RESTART FROM " + str(conn.ack))
+                recv_task.recived.clear()
+                packet = build_packet(
+                    conn.source_address,
+                    conn.dest_address,
+                    7,
+                    conn.ack,
+                    rst=1,
+                    _ack=1
+                )
+                conn.socket.sendto(packet, conn.dest_address)
 
         if timer is not None and time.time() - timer > time_limit:
             timer = time.time()
             time_limit = conn.get_time_limit()
-
-            print("re-sending ack " + str(conn.ack))
-
-            packet = build_packet(conn.source_address, conn.dest_address, 7, conn.ack, _ack=1)
-
+            print("Resending ack " + str(conn.ack))
+            packet = build_packet(
+                conn.source_address, conn.dest_address, 7, conn.ack, _ack=1
+            )
             conn.socket.sendto(packet, conn.dest_address)
 
 
 def close(conn: Conn):
     print("CLOSE")
-
-    packet = build_packet(conn.source_address, conn.dest_address, conn.seq, 3, fin=1)
-
-    conn.socket.sendto(packet, conn.dest_address)
+    
+    if(conn.dest_address is not None):
+        packet = build_packet(
+            conn.source_address, conn.dest_address, conn.seq, 3, fin=1
+        )
+        
+        conn.socket.sendto(packet, conn.dest_address)
+    
     conn.socket.close()
     conn.socket = None
 
