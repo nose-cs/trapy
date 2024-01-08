@@ -8,15 +8,15 @@ Enzo Rojas D'Toste C311
 
 ## ¿Cómo ejecutarlo?
 
-En el directorio ``trapy``, ejecutar el siguiente comando:
+En el directorio raíz del proyecto, ejecutar el siguiente comando:
 ```
-sudo python3 test.py --accept '<host>:<port>' --file <source-file-path>
+sudo python3 trapy/test.py --accept '<host>:<port>' --file <source-file-path>
 ```
 son necesarios los permisos de administrador.
 
 Y en otra terminal ejecutar:
 ```
-sudo python3 test.py --dial '<host>:<port>' --file <destination-file-path>
+sudo python3 trapy/test.py --dial '<host>:<port>' --file <destination-file-path>
 ```
 host y port deben ser iguales.
 

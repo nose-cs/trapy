@@ -1,4 +1,5 @@
 import json
+import pathlib
 
 
 class ConnException(Exception):
@@ -6,7 +7,7 @@ class ConnException(Exception):
 
 
 class PortManager:
-    def __init__(self, filename="./ports.json"):
+    def __init__(self, filename="ports.json"):
         """
         Keeps track of the ports in use.
 
@@ -14,12 +15,15 @@ class PortManager:
         filename (optional, defaults to "./ports.json"): This specified file contains a list of ports that are
         already occupied.
         """
-        self.filename = filename
-        with open(filename) as fp:
+
+        path = pathlib.Path(__file__).parent.resolve().joinpath(filename)
+        self.filepath = path
+        print(path)
+        with open(path) as fp:
             self.occupied_ports = set(json.load(fp))
 
     def __save(self):
-        with open(self.filename, "w") as fp:
+        with open(self.filepath, "w") as fp:
             json.dump(list(self.occupied_ports), fp, ensure_ascii=False, indent=2)
 
     def get_port(self):
